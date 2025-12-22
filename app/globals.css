@@ -86,10 +86,11 @@
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: hsl(var(--border));
   }
   body {
-    @apply bg-background text-foreground;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
   }
 }
 
@@ -100,15 +101,15 @@
     height: 6px;
     border-radius: 9999px;
     background: hsl(var(--muted));
-    transition: box-shadow .2s ease;
+    transition: box-shadow 0.2s ease;
   }
 
   .input-range:focus-visible {
-    box-shadow: 0 0 0 4px hsl(var(--ring) / .25);
+    box-shadow: 0 0 0 4px hsl(var(--ring) / 0.25);
   }
 
   .input-range:disabled {
-    opacity: .5;
+    opacity: 0.5;
     cursor: not-allowed;
   }
 
@@ -128,8 +129,8 @@
     border-radius: 9999px;
     background: hsl(var(--primary));
     border: 2px solid #fff; /* หรือใช้ var(--background) ถ้าต้องการ */
-    box-shadow: 0 1px 2px rgb(0 0 0 / .15);
-    transition: transform .12s ease, box-shadow .12s ease;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
   }
 
   .input-range:hover::-webkit-slider-thumb {
@@ -149,8 +150,8 @@
     border-radius: 9999px;
     background: hsl(var(--primary));
     border: 2px solid #fff;
-    box-shadow: 0 1px 2px rgb(0 0 0 / .15);
-    transition: transform .12s ease, box-shadow .12s ease;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
   }
 
   .input-range:hover::-moz-range-thumb {
