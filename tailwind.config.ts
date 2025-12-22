@@ -18,6 +18,10 @@ const config = {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ["var(--font-geist-sans)", "ui-sans-serif", "system-ui"],
+        mono: ["var(--font-geist-mono)", "ui-monospace", "monospace"],
+      },
       colors: {
         border: "hsl(var(--border))", // <--- บรรทัดนี้แก้ปัญหา border-border
         input: "hsl(var(--input))",
