@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation"; // เปลี่ยนจาก react-router-dom
 import Link from "next/link"; // เปลี่ยนจาก react-router-dom
-import Image from "next/image"; // ใช้แทน img
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Button } from "@/app/components/ui/button";
