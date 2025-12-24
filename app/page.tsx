@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/app/components/ui/select";
+import { Loader2 } from "lucide-react"; // เพิ่ม icon loading ถ้ามี
 
 const STORAGE_KEY_PER_SIZE = "perSizePx.v1";
 
@@ -27,7 +28,6 @@ const SIZE_MAP: Record<string, string> = {
   xl: "text-4xl",
 };
 
-// ค่า default เป็น px สำหรับแต่ละ size
 const BASE_PX: Record<keyof typeof SIZE_MAP, number> = {
   sm: 18,
   md: 24,
@@ -35,7 +35,7 @@ const BASE_PX: Record<keyof typeof SIZE_MAP, number> = {
   xl: 36,
 };
 
-// ---------- Helpers for embedding fonts into export ----------
+// ---------- Helpers ----------
 type FontMeta = {
   family: string;
   url: string;
@@ -116,6 +116,9 @@ export default function Index() {
   const [loading, setLoading] = useState(true);
   const [customFonts, setCustomFonts] = useState<string[]>([]);
   const [fontMetas, setFontMetas] = useState<FontMeta[]>([]);
+  
+  // ✨ NEW: State เพื่อบอกว่าฟอนต์ไหนโหลดเสร็จจริงแล้ว
+  const [readyFonts, setReadyFonts] = useState<Set<string>>(new Set());
 
   const [activeFont, setActiveFont] = useState<string | null>(null);
 
@@ -125,32 +128,27 @@ export default function Index() {
   const exportRef = useRef<HTMLDivElement>(null);
   const [countdown, setCountdown] = useState(0);
 
-  // Initialize with empty object to prevent Hydration Mismatch
   const [perSizePx, setPerSizePx] = useState<Record<string, number>>({});
 
-  // helper: px ที่ใช้กับแต่ละการ์ด
   const getPx = (name: string) => perSizePx[name] ?? BASE_PX[size];
   const activePx = activeFont
     ? perSizePx[activeFont] ?? BASE_PX[size]
     : BASE_PX[size];
 
-  // Load localStorage on mount (Client-side only)
+  // Load localStorage
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY_PER_SIZE);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === "object") {
-          setPerSizePx(parsed);
-        }
+        if (parsed && typeof parsed === "object") setPerSizePx(parsed);
       }
     } catch {}
   }, []);
 
-  // Save to localStorage
+  // Save localStorage
   useEffect(() => {
     if (Object.keys(perSizePx).length === 0) return;
-
     const id = setTimeout(() => {
       try {
         localStorage.setItem(STORAGE_KEY_PER_SIZE, JSON.stringify(perSizePx));
@@ -159,7 +157,7 @@ export default function Index() {
     return () => clearTimeout(id);
   }, [perSizePx]);
 
-  // ---------- Load published fonts from Firestore (Fixed for iOS) ----------
+  // ---------- Load Fonts Logic ----------
   useEffect(() => {
     let cancelled = false;
 
@@ -182,7 +180,7 @@ export default function Index() {
           
           if (!d?.family || !d?.url) continue;
 
-          // 1. เก็บ Meta Data
+          // 1. Meta Data
           const key = `${d.family}-${d.weight ?? 400}-${d.style ?? "normal"}`;
           if (!metaMap.has(key)) {
             metaMap.set(key, {
@@ -193,24 +191,33 @@ export default function Index() {
             });
           }
 
-          // 2. เพิ่มชื่อฟอนต์เข้ารายการ "ทันที" (ไม่รอโหลดไฟล์)
+          // 2. แสดงการ์ดทันที (เพื่อให้ iOS เห็นการ์ด)
           if (!seen.has(d.family)) {
             loadedFamilies.push(d.family);
             seen.add(d.family);
           }
 
-          // 3. โหลดไฟล์ฟอนต์แบบ Asynchronous
+          // 3. โหลดไฟล์ฟอนต์เบื้องหลัง + อัปเดต UI เมื่อเสร็จ
           (async () => {
             try {
               const ff = new FontFace(d.family, `url(${d.url})`, {
                 weight: (d.weight ?? 400).toString(),
                 style: d.style ?? "normal",
-                display: "swap", 
+                display: "swap",
               });
               await ff.load();
               (document as any).fonts.add(ff);
+              
+              // ✨ FIX: เมื่อโหลดเสร็จ ให้สั่ง React อัปเดต State เพื่อเรนเดอร์ใหม่
+              if (!cancelled) {
+                setReadyFonts(prev => {
+                    const next = new Set(prev);
+                    next.add(d.family);
+                    return next;
+                });
+              }
             } catch (e) {
-              console.warn(`Failed to load font file for ${d.family} on this device.`, e);
+              console.warn(`Font load issue: ${d.family}`, e);
             }
           })();
         }
@@ -239,65 +246,46 @@ export default function Index() {
     });
   }, [customFonts]);
 
-  // ---------- Modal prep ----------
+  // Modal prep
   useEffect(() => {
     if (!exportOpen) return;
     let alive = true;
-
     setCountdown(10);
-    const timer = setInterval(() => {
-      setCountdown((s) => (s > 0 ? s - 1 : 0));
-    }, 1000);
-
+    const timer = setInterval(() => setCountdown((s) => (s > 0 ? s - 1 : 0)), 1000);
     (async () => {
       setExportReady(false);
-      try {
-        await (document as any).fonts?.ready;
-      } catch {}
+      try { await (document as any).fonts?.ready; } catch {}
       if (!alive) return;
       requestAnimationFrame(() => setExportReady(true));
     })();
-
     return () => {
       alive = false;
       clearInterval(timer);
     };
   }, [exportOpen]);
 
-  // ---------- Export Function (ที่หายไป) ----------
+  // Export Func
   async function captureFullNodeToPng(
     node: HTMLElement,
     metas: FontMeta[],
     filename = "Neko-Font-Eng.png"
   ) {
     if ((document as any).fonts?.ready) {
-      try {
-        await (document as any).fonts.ready;
-      } catch {}
+      try { await (document as any).fonts.ready; } catch {}
     }
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
 
     const width = Math.ceil(node.scrollWidth);
     const height = Math.ceil(node.scrollHeight);
-
     const MAX = 16384;
-    let pixelRatio = Math.min(
-      window.devicePixelRatio || 1,
-      MAX / width,
-      MAX / height,
-      2
-    );
+    let pixelRatio = Math.min(window.devicePixelRatio || 1, MAX / width, MAX / height, 2);
     pixelRatio = Math.max(pixelRatio, 0.75);
 
     const cleanup = injectExportFonts(node, metas);
 
     try {
-      await ensureExportFontsLoaded(
-        metas,
-        (node.textContent || "").slice(0, 64)
-      );
+      await ensureExportFontsLoaded(metas, (node.textContent || "").slice(0, 64));
       void node.offsetHeight;
-
       const dataUrl = await htmlToImage.toPng(node, {
         backgroundColor: "#ffffff",
         width,
@@ -313,7 +301,6 @@ export default function Index() {
           background: "#ffffff",
         },
       });
-
       const a = document.createElement("a");
       a.href = dataUrl;
       a.download = filename;
@@ -323,12 +310,11 @@ export default function Index() {
     }
   }
 
-  // Cleanup perSizePx keys based on available fonts
+  // Cleanup local storage
   useEffect(() => {
     if (!customFonts.length) return;
     setPerSizePx((prev) => {
       if (Object.keys(prev).length === 0) return prev;
-
       const allowed = new Set(customFonts);
       const next: Record<string, number> = {};
       for (const [k, v] of Object.entries(prev)) {
@@ -339,10 +325,7 @@ export default function Index() {
   }, [customFonts]);
 
   return (
-    <div
-      className="min-h-screen bg-background"
-      onClick={() => setActiveFont(null)}
-    >
+    <div className="min-h-screen bg-background" onClick={() => setActiveFont(null)}>
       {/* Header */}
       <header className="border-b">
         <div className="container py-8 relative mx-auto px-4">
@@ -359,16 +342,11 @@ export default function Index() {
                 />
               </div>
               <div>
-                <h1 className="text-3xl font-bold tracking-tight">
-                  เครื่องมือแสดงตัวอย่างฟอนต์
-                </h1>
-                <p className="mt-2 text-muted-foreground">
-                  พิมพ์ข้อความครั้งเดียวและดูตัวอย่างข้อความของคุณในฟอนต์ต่างๆ
-                </p>
+                <h1 className="text-3xl font-bold tracking-tight">เครื่องมือแสดงตัวอย่างฟอนต์</h1>
+                <p className="mt-2 text-muted-foreground">พิมพ์ข้อความครั้งเดียวและดูตัวอย่างข้อความของคุณในฟอนต์ต่างๆ</p>
               </div>
             </div>
 
-            {/* Controls Center */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
               <div className="font-bold">
                 {activeFont ? `ฟอนต์ที่ : ${activeFont}` : "กรุณาเลือกฟอนต์"}
@@ -388,32 +366,20 @@ export default function Index() {
                     value={activePx}
                     onChange={(e) => {
                       if (!activeFont) return;
-                      setPerSizePx((p) => ({
-                        ...p,
-                        [activeFont]: Number(e.target.value),
-                      }));
+                      setPerSizePx((p) => ({ ...p, [activeFont]: Number(e.target.value) }));
                     }}
                     className="w-full"
-                    aria-label="ปรับขนาดการ์ดที่เลือก"
                   />
-                  <span className="font-bold w-12 text-right tabular-nums">
-                    {activePx} px
-                  </span>
+                  <span className="font-bold w-12 text-right tabular-nums">{activePx} px</span>
                 </div>
               </div>
 
               <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  onClick={() => setExportOpen(true)}
-                  disabled={loading || sortedFonts.length === 0}
-                >
+                <Button variant="secondary" onClick={() => setExportOpen(true)} disabled={loading || sortedFonts.length === 0}>
                   Export PNG
                 </Button>
                 <Button asChild>
-                  <Link href="/fonts/add" aria-label="Add a custom font">
-                    เพิ่มฟอนต์
-                  </Link>
+                  <Link href="/fonts/add">เพิ่มฟอนต์</Link>
                 </Button>
               </div>
             </div>
@@ -421,27 +387,21 @@ export default function Index() {
         </div>
       </header>
 
-      {/* Controls */}
+      {/* Main Content */}
       <main className="container py-6 mx-auto px-4">
-        <section aria-labelledby="controls" className="mb-6">
-          <h2 id="controls" className="sr-only">
-            Preview controls
-          </h2>
+        {/* Input Text */}
+        <section className="mb-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="flex-1">
               <Input
-                aria-label="Preview text"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 placeholder="พิมพ์ข้อความของคุณที่นี่…"
               />
             </div>
             <div className="w-full sm:w-48">
-              <Select
-                value={size}
-                onValueChange={(v) => setSize(v as keyof typeof SIZE_MAP)}
-              >
-                <SelectTrigger aria-label="Text size">
+              <Select value={size} onValueChange={(v) => setSize(v as keyof typeof SIZE_MAP)}>
+                <SelectTrigger>
                   <SelectValue placeholder="Text size" />
                 </SelectTrigger>
                 <SelectContent>
@@ -455,36 +415,28 @@ export default function Index() {
           </div>
         </section>
 
-        {/* Grid */}
-        <section aria-labelledby="grid">
-          <h2 id="grid" className="sr-only">
-            Font previews
-          </h2>
+        {/* Font Grid */}
+        <section>
+            {loading && (
+                <div className="flex items-center gap-2 text-muted-foreground mb-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    กำลังโหลดฟอนต์จากฐานข้อมูล...
+                </div>
+            )}
+            
+            {!loading && sortedFonts.length === 0 && (
+                <p className="mb-4 text-sm text-muted-foreground">ยังไม่มีฟอนต์ที่เผยแพร่</p>
+            )}
 
-          {loading && (
-            <p className="mb-4 text-sm text-muted-foreground">
-              กำลังโหลดฟอนต์จากฐานข้อมูล…
-            </p>
-          )}
-
-          {!loading && sortedFonts.length === 0 && (
-            <p className="mb-4 text-sm text-muted-foreground">
-              ยังไม่มีฟอนต์ที่เผยแพร่ — กด{" "}
-              <Link href="/fonts/add" className="underline">
-                เพิ่มฟอนต์
-              </Link>{" "}
-              เพื่อเพิ่มฟอนต์
-            </p>
-          )}
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 items-start">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 items-start">
             {sortedFonts.map((name) => (
               <div
                 key={`grid-${name}`}
-                className={`relative cursor-pointer self-start ${
-                  activeFont === name
-                    ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-lg"
-                    : ""
+                className={`relative cursor-pointer self-start transition-opacity duration-500 ${
+                  activeFont === name ? "ring-2 ring-primary ring-offset-2 ring-offset-background rounded-lg" : ""
+                } ${
+                   /* ✨ FIX: ถ้าฟอนต์ยังไม่พร้อม ให้แสดงจางๆ หรือใช้ fallback font */
+                   readyFonts.has(name) ? "opacity-100" : "opacity-70"
                 }`}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -497,7 +449,8 @@ export default function Index() {
                   sample={text || ""}
                   sizeClass={SIZE_MAP[size]}
                   style={{
-                    fontFamily: `'${name}', ui-sans-serif, system-ui, sans-serif`,
+                    /* ✨ FIX: ถ้าโหลดเสร็จใช้ฟอนต์จริง ถ้ายังไม่เสร็จใช้ sans-serif ไปก่อน */
+                    fontFamily: readyFonts.has(name) ? `'${name}', ui-sans-serif, system-ui, sans-serif` : 'ui-sans-serif, system-ui, sans-serif',
                     fontSize: `${getPx(name)}px`,
                   }}
                 />
@@ -511,41 +464,28 @@ export default function Index() {
       {exportOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
           <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            {/* header */}
             <div className="flex items-center justify-between p-4 border-b bg-white">
-              <h2 className="text-lg font-semibold">
-                Preview (สำหรับบันทึกเป็น PNG)
-              </h2>
+              <h2 className="text-lg font-semibold">Preview (สำหรับบันทึกเป็น PNG)</h2>
               <div className="flex gap-2">
                 <Button
                   variant="destructive"
-                  className="font-semibold"
                   disabled={!exportReady || countdown > 0}
                   onClick={async () => {
                     if (!exportRef.current) return;
                     try {
-                      await captureFullNodeToPng(
-                        exportRef.current,
-                        fontMetas,
-                        "Neko-Font-Eng.png"
-                      );
+                      await captureFullNodeToPng(exportRef.current, fontMetas);
                     } catch (err) {
                       console.error(err);
                       alert("บันทึก PNG ไม่สำเร็จ");
                     }
                   }}
                 >
-                  {!exportReady
-                    ? "กำลังเตรียม…"
-                    : countdown > 0
-                    ? `รอ ${countdown}s`
-                    : "Save PNG"}
+                  {!exportReady ? "กำลังเตรียม…" : countdown > 0 ? `รอ ${countdown}s` : "Save PNG"}
                 </Button>
                 <Button onClick={() => setExportOpen(false)}>ปิด</Button>
               </div>
             </div>
 
-            {/* scrollable body */}
             <div className="overflow-auto p-6 flex-1 bg-gray-50">
               <div ref={exportRef} className="bg-white p-6 min-h-full">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 items-start">
