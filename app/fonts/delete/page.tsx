@@ -7,6 +7,7 @@ import { Button } from "@/app/components/ui/button";
 import FontCard from "@/app/components/FontCard";
 import { db } from "@/app/lib/firebase";
 import { collection, getDocs, query, where, deleteDoc, DocumentData } from "firebase/firestore";
+import ProtectedRoute from "@/app/components/ProtectedRoute";
 
 interface FontDocument {
   id: string;
@@ -195,6 +196,7 @@ export default function DeleteFontsPage() {
     }
 
   return (
+    <ProtectedRoute>
     <div className="min-h-screen bg-background">
         <header className="border-b bg-card">
           <div className="container mx-auto px-4 py-4">
@@ -296,5 +298,6 @@ export default function DeleteFontsPage() {
             )}
         </main>
     </div>
+    </ProtectedRoute>
   );
 }

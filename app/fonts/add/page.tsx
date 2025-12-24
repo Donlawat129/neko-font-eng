@@ -13,6 +13,7 @@ import { auth, db } from "@/app/lib/firebase";
 import { signOut } from "firebase/auth";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { ArrowLeft, FileText } from "lucide-react";
+import ProtectedRoute from "@/app/components/ProtectedRoute";
 
 const DEFAULT_SAMPLE = "Neko-Font-Eng";
 
@@ -179,6 +180,7 @@ export default function AddFontForm() {
   };
 
   return (
+    <ProtectedRoute>
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card">
         <div className="container py-8 mx-auto px-4">
@@ -306,5 +308,6 @@ export default function AddFontForm() {
         </section>
       </main>
     </div>
+    </ProtectedRoute>
   );
 };
