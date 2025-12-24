@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link"; 
-import Image from "next/image"; 
+import Link from "next/link";
+import Image from "next/image";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import * as htmlToImage from "html-to-image";
 import { db } from "@/app/lib/firebase";
@@ -149,7 +149,6 @@ export default function Index() {
 
   // Save to localStorage
   useEffect(() => {
-    // Don't save empty state on initial render if we haven't loaded yet
     if (Object.keys(perSizePx).length === 0) return;
 
     const id = setTimeout(() => {
@@ -160,7 +159,7 @@ export default function Index() {
     return () => clearTimeout(id);
   }, [perSizePx]);
 
-  // ---------- Load published fonts from Firestore ----------
+  // ---------- Load published fonts from Firestore (Fixed for iOS) ----------
   useEffect(() => {
     let cancelled = false;
 
@@ -180,24 +179,10 @@ export default function Index() {
             weight?: number;
             style?: string;
           };
+          
           if (!d?.family || !d?.url) continue;
 
-          try {
-            const ff = new FontFace(d.family, `url(${d.url})`, {
-              weight: (d.weight ?? 400).toString(),
-              style: d.style ?? "normal",
-              display: "swap",
-            });
-            await ff.load();
-            (document as any).fonts.add(ff);
-            if (!seen.has(d.family)) {
-              loadedFamilies.push(d.family);
-              seen.add(d.family);
-            }
-          } catch (e) {
-            console.error("Failed to load font:", d.family, e);
-          }
-
+          // 1. เก็บ Meta Data
           const key = `${d.family}-${d.weight ?? 400}-${d.style ?? "normal"}`;
           if (!metaMap.has(key)) {
             metaMap.set(key, {
@@ -207,6 +192,27 @@ export default function Index() {
               style: d.style,
             });
           }
+
+          // 2. เพิ่มชื่อฟอนต์เข้ารายการ "ทันที" (ไม่รอโหลดไฟล์)
+          if (!seen.has(d.family)) {
+            loadedFamilies.push(d.family);
+            seen.add(d.family);
+          }
+
+          // 3. โหลดไฟล์ฟอนต์แบบ Asynchronous
+          (async () => {
+            try {
+              const ff = new FontFace(d.family, `url(${d.url})`, {
+                weight: (d.weight ?? 400).toString(),
+                style: d.style ?? "normal",
+                display: "swap", 
+              });
+              await ff.load();
+              (document as any).fonts.add(ff);
+            } catch (e) {
+              console.warn(`Failed to load font file for ${d.family} on this device.`, e);
+            }
+          })();
         }
 
         if (!cancelled) {
@@ -258,7 +264,7 @@ export default function Index() {
     };
   }, [exportOpen]);
 
-  // ---------- Export ----------
+  // ---------- Export Function (ที่หายไป) ----------
   async function captureFullNodeToPng(
     node: HTMLElement,
     metas: FontMeta[],
@@ -321,7 +327,6 @@ export default function Index() {
   useEffect(() => {
     if (!customFonts.length) return;
     setPerSizePx((prev) => {
-      // ถ้า prev ว่างเปล่า (ยังไม่โหลด local storage) ไม่ต้องทำอะไร
       if (Object.keys(prev).length === 0) return prev;
 
       const allowed = new Set(customFonts);
@@ -345,12 +350,12 @@ export default function Index() {
             <div className="flex items-center gap-3">
               <div className="relative w-20 h-20">
                 <Image
-                  src="/images/neko-font.jpg" // Next.js จะไปหาไฟล์นี้ที่ public/images/neko-font.jpg
+                  src="/images/neko-font.jpg"
                   alt="Logo"
-                  fill // ใช้ fill เพื่อให้รูปขยายเต็มพ่อแม่ (div w-20 h-20)
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" // ช่วยเรื่อง SEO และ Performance
-                  className="object-cover rounded-lg" // เพิ่ม rounded ได้ถ้าต้องการ
-                  priority // ใส่ priority ถ้าเป็นรูป logo ด้านบน เพื่อให้โหลดก่อนส่วนอื่น
+                  fill
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                  className="object-cover rounded-lg"
+                  priority
                 />
               </div>
               <div>
@@ -363,7 +368,7 @@ export default function Index() {
               </div>
             </div>
 
-            {/* ปุ่ม + สไลเดอร์ส่วนกลาง */}
+            {/* Controls Center */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
               <div className="font-bold">
                 {activeFont ? `ฟอนต์ที่ : ${activeFont}` : "กรุณาเลือกฟอนต์"}
